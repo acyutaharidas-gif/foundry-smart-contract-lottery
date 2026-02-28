@@ -7,7 +7,6 @@ import {HelperConfig} from "./HelperConfig.s.sol";
 import {CreateSubscription, FundSubscription, AddConsumer} from "script/Interactions.s.sol";
 
 contract DeployRaffle is Script {
-
     function deployContract() public returns (Raffle, HelperConfig) {
         HelperConfig helperConfig = new HelperConfig();
         // local -> deploy mocks , get local config
@@ -17,7 +16,8 @@ contract DeployRaffle is Script {
         if (config.subscriptionId == 0) {
             // create sub
             CreateSubscription createSubscription = new CreateSubscription();
-            (config.subscriptionId, config.vrfCoordinator) = createSubscription.createSubscription(config.vrfCoordinator);
+            (config.subscriptionId, config.vrfCoordinator) =
+                createSubscription.createSubscription(config.vrfCoordinator);
 
             // fund it
             FundSubscription fundSubscription = new FundSubscription();

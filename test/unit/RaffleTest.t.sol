@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {DeployRaffle} from "script/DeployRaffle.s.sol";
 import {Raffle} from "src/Raffle.sol";
 import {HelperConfig} from "script/HelperConfig.s.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 contract RaffleTest is Test {
     Raffle public raffle;
@@ -22,6 +23,7 @@ contract RaffleTest is Test {
 
     event RaffleEntered(address indexed player);
     event WinnerPicked(address indexed winner);
+    event RequestedRaffleWinner(uint256 indexed requestId);
 
     function setUp() external {
         DeployRaffle deployer = new DeployRaffle();
@@ -63,12 +65,7 @@ contract RaffleTest is Test {
         raffle.enterRaffle{value: entranceFee}();
     }
 
-    function testDontAllowPlayersWhenRaffleIsCalculating() public {
-        vm.prank(PLAYER);
-        raffle.enterRaffle{value: entranceFee}();
-        vm.warp(block.timestamp + interval + 1);
-        vm.roll(block.number + 1);
-
+    function testDontAllowPlayersWhenRaffleIsCalculating() public raffleEntered {
         raffle.performUpkeep("");
 
         vm.expectRevert(Raffle.Raffle__RaffleNotOpen.selector);
@@ -76,28 +73,70 @@ contract RaffleTest is Test {
         raffle.enterRaffle{value: entranceFee}();
     }
 
-    // ***********************************************************************************************
+    // *******************************************************************************
     //                      CHECK UPKEEP
-    // ***********************************************************************************************
+    // *******************************************************************************
 
     function testCheckUpkeepReturnsFalseIfHasNoBalance() public {
         vm.warp(block.timestamp + interval + 1);
         vm.roll(block.number + 1);
 
-        (bool upkeepNeeded, ) = raffle.checkUpkeep("");
+        (bool upkeepNeeded,) = raffle.checkUpkeep("");
 
         assert(!upkeepNeeded);
     }
 
-    function testCheckUpkeepIsFalseIfRaffleIsNotOpen() public {
+    function testCheckUpkeepIsFalseIfRaffleIsNotOpen() public raffleEntered {
+        raffle.performUpkeep("");
+        (bool upkeepNeeded,) = raffle.checkUpkeep("");
+        assert(!upkeepNeeded);
+    }
+
+    // *******************************************************************************
+    //                      PERFORM UPKEEP
+    // *******************************************************************************
+
+    function testPerformUpkeepOnlyRunsWhenCheckUpkeepIsTrue() public raffleEntered {
+        raffle.performUpkeep("");
+    }
+
+    function testPerformUpkeepRevertsWhenCheckUpkeepIsFalse() public {
+        uint256 currentBalance = 0;
+        uint256 numPlayers = 0;
+        Raffle.RaffleState rstate = raffle.getRaffleState();
+
+        vm.prank(PLAYER);
+        raffle.enterRaffle{value: entranceFee}();
+        currentBalance = currentBalance + entranceFee;
+        numPlayers = 1;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Raffle.Raffle__UpkeepNotNeeded.selector, currentBalance, numPlayers, rstate)
+        );
+
+        raffle.performUpkeep("");
+    }
+
+    function testPerformUpkeepUpdatesRaffleStateAndEmitsRequestId() public raffleEntered {
+        vm.recordLogs();
+        raffle.performUpkeep("");
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 requestId = entries[1].topics[1];
+
+        assert(uint256(requestId) > 0);
+        assert(raffle.getRaffleState() == Raffle.RaffleState.CALCULATING);
+    }
+
+    function testFulfillRandomWordsCanOnlyBeCalledAfterPerformUpkeep() public raffleEntered {
+        // vm.expectRevert(VRFCoordinatorV2_5Mock.InvalidRequest.selector);
+
+    }
+
+    modifier raffleEntered() {
         vm.prank(PLAYER);
         raffle.enterRaffle{value: entranceFee}();
         vm.warp(block.timestamp + interval + 1);
         vm.roll(block.number + 1);
-        raffle.performUpkeep("");
-        (bool upkeepNeeded, ) = raffle.checkUpkeep("");
-        assert(!upkeepNeeded);
+        _;
     }
-
-    // function test () public {}
 }
